@@ -26,6 +26,25 @@ Core Features:
 - Finally, attempt to slay the Hydra in a simple text-based battle!
 """
 
+# Turn/Day count
+turn_count = 1
+
+# Game-long stats for summary at the end
+class Player_Stats():
+    def __init__(self):
+        self.gold_spent = 0
+        self.food_eaten = 0
+        self.arcane_made = 0
+        self.quests_succeeded = 0
+        self.quests_failed = 0
+        self.xp_gained = 0
+        self.random_events_held = 0
+        self.hydras_slain = 0
+        self.debug_used = 0
+        self.turn_count = 1
+
+Stats = Player_Stats()
+
 # Daily quest limit: move things along
 quests_per_day = 2
 quests_today = 0
@@ -94,16 +113,13 @@ recent_events = []
 RECENT_EVENTS_MAX = 3  # or however many you'd like
 # Event dict definied below
 
-# Turn/Day count
-turn_count = 1
-
 # -------------------------------------------------------------------
 # CONFIG
 # -------------------------------------------------------------------
 BUILDING_INFO = {
     "Town Center": {
         "max_level": 3,
-        "upgrade_costs": [(100, 50, 10), (300, 100, 25)],  # for levels 2, 3
+        "upgrade_costs": [(0, 0, 0), (100, 50, 10), (300, 100, 25)],  # for levels 2, 3
     },
     "Farm": {
         "max_level": 3,
@@ -123,7 +139,6 @@ BUILDING_INFO = {
         "max_level": 3,
         "upgrade_costs": [(100, 0, 0), (300, 0, 0), (600, 0, 0)],
         "gold_production": [0, 5, 15, 50],
-
     },
     "Blacksmith": {
         "max_level": 3,
@@ -131,8 +146,9 @@ BUILDING_INFO = {
     },
 }
 
-HERO_MAX_LEVEL = 5
-HERO_XP_TABLE = [10, 20, 40, 70, 110]
+
+HERO_XP_TABLE = [10, 20, 40, 70, 110] #How much xp is required to go up a level
+HERO_MAX_LEVEL = len(HERO_XP_TABLE) #So you only have to edit one thing
 
 # -------------------------------------------------------------------
 # UTILITY & DISPLAY
@@ -143,7 +159,7 @@ def clear_screen():
     Clears the console using ANSI escape sequences.
     This should work on most Unix and modern Windows terminals.
     """
-    os.system('cls')
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 def get_hero_combat_power(hero_class):
     """Calculate total 'combat power' for a hero."""
@@ -242,9 +258,8 @@ def reset_messages():
 
 def random_events():
     global recent_events
-    reset_messages()
     # 1) Check if we pass the base "any event?" chance
-    base_chance = 15 + (buildings["Trading Hall"] * 5)
+    base_chance = 15 + (buildings["Town Center"] * 5)
     roll = random.randint(1, 100)
     if roll > base_chance:
         return  # No event this turn
@@ -273,6 +288,7 @@ def random_events():
     if not possible_events:
         return  # No eligible events
 
+    
     # 3) Weighted random choice
     total_weight = sum(weight for (_, weight) in possible_events)
     r = random.uniform(0, total_weight)
@@ -294,6 +310,9 @@ def random_events():
     recent_events.append(chosen_event["name"])
     if len(recent_events) > RECENT_EVENTS_MAX:
         recent_events.pop(0)  # Keep recent_events list short
+    
+    # 6) Increment Stats
+    Stats.random_events_held += 1 # Should only tick up if we A) pass the check B) actually have a possible event
 
 def wandering_merchant():
     add_message("Random Event: Wandering Merchant!")
@@ -308,6 +327,7 @@ def wayward_adventurer():
     add_message("Random Event: Wayward Adventurer!")
     if heroes["Knight"]["level"] >= 2:
         heroes["Knight"]["xp"] += 2
+        Stats.xp_gained += 2
         add_message("Your Knight duels the adventurer and gains +2 XP!")
     else:
         add_message("The adventurer finds no worthy opponent and leaves.")
@@ -328,6 +348,7 @@ def event_arcane_experiment():
     if random.randint(1, 100) <= 70:
         arcane_gain = random.randint(5, 15) + turn_count
         resources["Arcane"] += arcane_gain
+        Stats.arcane_made += arcane_gain
         add_message(f"Successful experiment! Gained {arcane_gain} Arcane Knowledge.")
     else:
         lost_food = 5
@@ -421,6 +442,8 @@ EVENTS = [
 
 def end_turn():
     global quests_today
+    reset_messages()
+    
     # Resource production
     f_level = buildings["Farm"]
     if f_level > 0:
@@ -428,20 +451,33 @@ def end_turn():
 
     t_level = buildings["Arcane Tower"]
     if t_level > 0:
-        resources["Arcane"] += BUILDING_INFO["Arcane Tower"]["arcane_production"][t_level]
+        generated_arcane_amount = BUILDING_INFO["Arcane Tower"]["arcane_production"][t_level]
+        resources["Arcane"] += generated_arcane_amount
+        Stats.arcane_made += generated_arcane_amount
 
-    h_level = buildings["Trade Hall"]
+    h_level = buildings["Trading Hall"]
     if h_level > 0:
-        resources["Gold"] += BUILDING_INFO["Trade Hall"]["gold_production"][h_level]
+        resources["Gold"] += BUILDING_INFO["Trading Hall"]["gold_production"][h_level]
 
-    active_heroes = [h for h, d in heroes.items() if d["level"] > 0]
-    for hero in active_heroes:
-        
+    hero_level = sum([h["level"] for h in heroes.values()])
+    food_ate = int(5 * hero_level + (hero_level * random.uniform(-0.05, 0.05)))    
+    if resources["Food"] < food_ate:
+        resources["Food"] = 0
+        add_message(f"You ran out of food to feed your Heroes! They lose some XP from hunger.")
+        for h, d in heroes.items():
+            if d["level"] > 0:
+                heroes[h]["xp"] = max(0, heroes[h]["xp"] - 1)
+    else:
+        resources["Food"] -= food_ate
+        Stats.food_eaten += food_ate
+        add_message(f"Your Heroes ate {food_ate} food.")
 
     quests_today = 0
 
     # Trigger random event
     random_events()
+    add_message(f"Day {turn_count - 1} ended. Day {turn_count} begins.")
+
 
 def build_or_upgrade():
     reset_messages()
@@ -460,9 +496,9 @@ def build_or_upgrade():
         if current_level < BUILDING_INFO[bld]["max_level"]:
             gold, food, arcane = BUILDING_INFO[bld]["upgrade_costs"][current_level]
             if (resources["Gold"] >= gold and resources["Food"] >= food and resources["Arcane"] >= arcane):
-            	print(f"({code}) {bld} (Lv {current_level}) - Cost: {gold}G, {food}F, {arcane}A")
+                print(f"({code}) {bld} (Lv {current_level}) - Cost: {gold}G, {food}F, {arcane}A")
             else:
-            	print(f"({code}) //{bld} (Lv {current_level}) - Cost: {gold}G, {food}F, {arcane}A")
+                print(f"({code}) //{bld} (Lv {current_level}) - Cost: {gold}G, {food}F, {arcane}A")
         else:
             print(f"({code}) {bld} (Max Level Reached)")
 
@@ -488,6 +524,7 @@ def build_or_upgrade():
         resources["Food"] >= food_cost and
         resources["Arcane"] >= arcane_cost):
         resources["Gold"] -= gold_cost
+        Stats.gold_spent += gold_cost
         resources["Food"] -= food_cost
         resources["Arcane"] -= arcane_cost
         buildings[bld_name] += 1
@@ -498,6 +535,7 @@ def build_or_upgrade():
         add_message(f"Available: {resources['Gold']}G, {resources['Food']}F, {resources['Arcane']}A.")
 
 def recruit_or_train_hero():
+    global quests_per_day
     reset_messages()
     add_message("You chose: Recruit/Train a hero")
     current_heroes = sum(1 for hero in heroes if heroes[hero]["level"] > 0)
@@ -546,9 +584,12 @@ def recruit_or_train_hero():
         recruit_cost_food = 10
         if resources["Gold"] >= recruit_cost_gold and resources["Food"] >= recruit_cost_food:
             resources["Gold"] -= recruit_cost_gold
+            Stats.gold_spent += recruit_cost_gold
             resources["Food"] -= recruit_cost_food
+
             heroes[hero_class]["level"] = 1
             add_message(f"Recruited a Level 1 {hero_class}!")
+            quests_per_day += 2
         else:
             add_message("Not enough resources to recruit!")
     else:
@@ -675,24 +716,28 @@ def run_quest(quest_name, difficulty):
     roll = random.randint(1, 100)
     if roll <= success_chance:
         add_message(f"Success on '{quest_name}'! (roll {roll} <= {success_chance})")
+        Stats.quests_succeeded += 1
         if quest_name == "Gather Resources":
             gold_gain = random.randint((hero_level*10), (hero_level*10)+20)
             food_gain = random.randint(hero_level*5, hero_level*10)
             resources["Gold"] += gold_gain
             resources["Food"] += food_gain
             heroes[hero_class]["xp"] += 2
+            Stats.xp_gained += 2
             add_message(f"Gained {gold_gain} Gold, {food_gain} Food, and 2 XP for {hero_class}.")
         elif quest_name == "Scout Hydra Location":
             if not hydra_progress["located"]:
                 hydra_progress["located"] = True
                 heroes[hero_class]["xp"] += 3
                 add_message("Hydra's lair discovered! +3 XP")
+                Stats.xp_gained += 3
             else:
                 add_message("Already know where Hydra is. No new info.")
         elif quest_name == "Build Hydra Access Route":
             if hydra_progress["located"] and not hydra_progress["access"]:
                 hydra_progress["access"] = True
                 heroes[hero_class]["xp"] += 3
+                Stats.xp_gained += 3
                 add_message("Route to Hydra established! +3 XP")
             else:
                 if not hydra_progress["located"]:
@@ -704,6 +749,7 @@ def run_quest(quest_name, difficulty):
                 if not hydra_progress["gear"]:
                     hydra_progress["gear"] = True
                     heroes[hero_class]["xp"] += 3
+                    Stats.xp_gained += 3
                     add_message("Dragonsteel gear forged! +3 XP")
                 else:
                     add_message("Gear already crafted.")
@@ -717,6 +763,8 @@ def run_quest(quest_name, difficulty):
     else:
         add_message(f"Failure on '{quest_name}' (roll {roll} > {success_chance}). +1 XP to {hero_class}.")
         heroes[hero_class]["xp"] += 1
+        Stats.quests_failed += 1
+        Stats.xp_gained += 1
 
 def attempt_final_battle():
     reset_messages()
@@ -746,14 +794,18 @@ def attempt_final_battle():
         add_message(f"Round {round_num}: You deal {dmg_to_hydra}, Hydra deals {dmg_from_hydra}")
         if hydra_hp <= 0:
             add_message("Hydra is slain! Victory!")
+            Stats.hydras_slain += 1
             victory()
             return
         elif your_team_hp <= 0:
-            add_message("Your heroes have been defeated. Rebuild and try again.")
+            add_message("Your heroes have been defeated and the Hydra flees. Rebuild and try again.")
+
+            hydra_progress['located'] = False
             return
 
 def victory():
-    add_message("Congratulations! The Hydra is slain, your kingdom is saved!")
+    add_message("Congratulations! The Hydra is slain, your kingdom is saved! I'm sure it will stay dead and not come back stronger that'd be weird!")
+    add_message(Stats.__dict__)
     # You can keep playing or end.
 
 # -------------------------------------------------------------------
@@ -769,14 +821,15 @@ def main_menu():
         print("(1) Build or Upgrade a structure")
         print("(2) Recruit or Train a hero")
         if quests_per_day > quests_today:
-          print("(3) Send heroes on a quest")
+            print("(3) Send heroes on a quest")
         else:
-        	print("(3) //Send heroes on a quest")
+            print("(3) //Send heroes on a quest")
         if not hydra_progress['fight_unlocked']:
-        	print("(4) //Attempt the final Hydra battle (if ready)")
+            print("(4) //Attempt the final Hydra battle (if ready)")
         else:
-        	print("(4) Attempt the final Hydra battle (if ready)")
+            print("(4) Attempt the final Hydra battle (if ready)")
         print("(5) End Day (resource collection & random events)")
+        print("(6) View Stats")
         print("(q) Quit Game")
 
         choice = input("Enter choice: ").lower()
@@ -791,14 +844,31 @@ def main_menu():
         elif choice == '5':
             global turn_count
             turn_count += 1
+            Stats.turn_count += 1
             end_turn()
-            add_message(f"Day {turn_count - 1} ended. Day {turn_count} begins.")
+        elif choice == '6':
+            display_stats()
         elif choice == 'q':
             print("\nThanks for playing! Goodbye.")
             sys.exit(0)
+        elif "debug" in choice:
+            parts = choice.split()
+            if parts[1].lower() == "all":
+                for r in resources:
+                    resources[r] += 500
+            elif parts[1].lower() == "hydra":
+                for key in hydra_progress.keys():
+                    hydra_progress[key] = True
+            elif len(parts) > 1 and parts[1].capitalize() in resources:
+                resources[parts[1].capitalize()] += 500
+            add_message(f"Performed debug: {parts[1].capitalize()}. Cheater.")
+            Stats.debug_used += 1
+            add_message(f"Debug used count: {Stats.debug_used}")
         else:
             add_message("Invalid choice. Please try again.")
 
+def display_stats():
+    add_message(Stats.__dict__)
 # -------------------------------------------------------------------
 # ENTRY POINT
 # -------------------------------------------------------------------
