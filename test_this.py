@@ -18,17 +18,6 @@ last_quest_data = {
 
 """
 SLAY THE HYDRA - A Text-Based Kingdom Builder
----------------------------------------------
-
-Now featuring a "Gods/Goddesses" system:
-
-- On Day 25, the player is prompted to choose one of four deities.
-- Must build a Temple to that deity to activate their powers.
-- Each deity confers unique daily bonuses/penalties and unlocks a special quest.
-- Only one deity at a time. Switching later could require destroying (or losing) the existing temple.
-
-The rest of the game flow remains as before: manage resources, build structures,
-recruit heroes, go on quests, and prepare to slay the Hydra!
 """
 
 # Turn/Day count
@@ -1419,7 +1408,7 @@ if __name__ == "__main__":
     clear_screen()
     print("Welcome to SLAY THE HYDRA\n-------------------------\n")
     print("Manage your kingdom, recruit heroes, and complete quests to \n eventually slay the Hydra.")
-    print("Now featuring a brand-new pantheon of Gods or Goddesses!\n")
+    print("Now featuring a special surprise at Day 25!\n")
     input("Press Enter to continue...")
     clear_screen()
     main_menu()
